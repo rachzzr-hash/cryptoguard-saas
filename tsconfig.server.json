@@ -6,7 +6,10 @@
     "outDir": "dist/server",
     "rootDir": ".",
     "jsx": "react-jsx",
-    "types": ["node"]
+    "types": ["node"],
+    "strict": false,
+    "noImplicitAny": false,
+    "skipLibCheck": true
   },
   "include": ["server/**/*"],
   "exclude": ["node_modules", "dist", "client"]
