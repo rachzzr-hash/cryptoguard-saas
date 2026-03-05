@@ -5,8 +5,9 @@ import Landing from "./pages/Landing";
 import Auth from "./pages/Auth";
 import Pricing from "./pages/Pricing";
 import Dashboard from "./pages/Dashboard";
+import TelegramTutorial from "./pages/TelegramTutorial";
 
-type Page = "home" | "login" | "register" | "pricing" | "dashboard";
+type Page = "home" | "login" | "register" | "pricing" | "dashboard" | "telegram";
 
 export default function App() {
   const [page, setPage] = useState<Page>("home");
@@ -79,6 +80,24 @@ export default function App() {
     }
   }
 
+  async function handleCryptoCheckout(plan: string, currency: string) {
+    try {
+      const res = await fetch("/api/crypto/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ plan, currency }),
+      });
+      const data = await res.json();
+      if (data.invoice_url) {
+        window.location.href = data.invoice_url;
+      } else {
+        alert(data.error || "Erreur paiement crypto. Vérifiez NOWPAYMENTS_API_KEY.");
+      }
+    } catch (e) {
+      alert("Erreur lors du paiement crypto.");
+    }
+  }
+
   async function handleLangChange(l: Lang) {
     setLang(l);
     if (user && token) {
@@ -107,12 +126,13 @@ export default function App() {
       />
 
       {page === "home" && <Landing lang={lang} onNav={setPage as any} stats={stats} />}
-      {page === "pricing" && <Pricing lang={lang} user={user} onNav={setPage as any} onCheckout={handleCheckout} />}
+      {page === "pricing" && <Pricing lang={lang} user={user} onNav={setPage as any} onCheckout={handleCheckout} onCryptoCheckout={handleCryptoCheckout} />}
       {page === "login" && <Auth lang={lang} mode="login" onNav={setPage as any} onSuccess={handleLogin} />}
       {page === "register" && <Auth lang={lang} mode="register" onNav={setPage as any} onSuccess={handleLogin} />}
       {page === "dashboard" && user && (
         <Dashboard lang={lang} user={user} token={token} onNav={setPage as any} />
       )}
+      {page === "telegram" && <TelegramTutorial lang={lang} onNav={setPage as any} />}
     </div>
   );
-  }
+      }
