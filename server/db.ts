@@ -57,5 +57,19 @@ export async function initDB(): Promise<void> {
     )
   `);
 
-  console.log("[DB] ✅ Tables prêtes");
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS cg_crypto_payments (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id INT NOT NULL,
+      plan VARCHAR(20) NOT NULL,
+      order_id VARCHAR(100) UNIQUE NOT NULL,
+      currency VARCHAR(20) DEFAULT 'sol',
+      amount_usd FLOAT DEFAULT 0,
+      status ENUM('pending','completed','failed') DEFAULT 'pending',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES cg_users(id)
+    )
+  `);
+
+  console.log("[DB] Tables pretes");
 }
