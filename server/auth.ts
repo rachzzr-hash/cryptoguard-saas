@@ -41,14 +41,11 @@ router.post("/register", async (req: Request, res: Response) => {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: "Email et mot de passe requis" });
     if (password.length < 6) return res.status(400).json({ error: "Mot de passe trop court (6 min)" });
-
     const db = getPool();
     const [existing] = await db.query("SELECT id FROM users WHERE email=?", [email]) as any[];
-    if ((existing as any[]).length > 0) return res.status(409).json({ error: "Email déjà utilisé" });
+    if ((existing as any[]).length > 0) return res.status(409).json({ error: "Email deja utilise" });
 
     const hash = await bcrypt.hash(password, 12);
-    
-    // Premier utilisateur = admin automatiquement
     const [allUsers] = await db.query("SELECT COUNT(*) as count FROM users") as any[];
     const isFirst = (allUsers as any[])[0]?.count === 0;
     const role = isFirst ? "admin" : "user";
@@ -64,6 +61,7 @@ router.post("/register", async (req: Request, res: Response) => {
       JWT_SECRET,
       { expiresIn: "30d" }
     );
+
     res.json({ token, plan, role, email });
   } catch (err) {
     console.error(err);
@@ -88,11 +86,13 @@ router.post("/login", async (req: Request, res: Response) => {
       JWT_SECRET,
       { expiresIn: "30d" }
     );
+
     res.json({ token, plan: user.plan, role: user.role || "user", email: user.email });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erreur serveur" });
-feat: add role field to JWT, auto-assign admin to first user, /me endpoint});
+  }
+});
 
 // ---- ME ----
 router.get("/me", authMiddleware, async (req: AuthRequest, res: Response) => {
