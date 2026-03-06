@@ -4,7 +4,7 @@ interface LandingProps {
   lang: Lang;
   onNav: (p: string) => void;
   stats?: { totalScanned: number; safeTokens: number; totalWallets: number };
-}
+}h
 
 export default function Landing({ lang, onNav, stats }: LandingProps) {
   return (
@@ -43,9 +43,9 @@ export default function Landing({ lang, onNav, stats }: LandingProps) {
         <section className="max-w-4xl mx-auto px-4 pb-12">
           <div className="grid grid-cols-3 gap-4">
             {[
-              { label: t("landing.stats.tokens", lang), value: stats.totalScanned.toLocaleString(), icon: "📊" },
-              { label: t("landing.stats.safe", lang), value: stats.safeTokens.toLocaleString(), icon: "✅" },
-              { label: t("landing.stats.wallets", lang), value: stats.totalWallets.toLocaleString(), icon: "🚫" },
+              { label: t("landing.stats.tokens", lang), value: (stats.totalScanned ?? 0).toLocaleString(), icon: "📊" },
+              { label: t("landing.stats.safe", lang), value: (stats.safeTokens ?? 0).toLocaleString(), icon: "✅" },
+              { label: t("landing.stats.wallets", lang), value: (stats.totalWallets ?? 0).toLocaleString(), icon: "🚫" },
             ].map((s) => (
               <div key={s.label} className="bg-[#161b22] border border-[#30363d] rounded-xl p-5 text-center">
                 <div className="text-2xl mb-1">{s.icon}</div>
