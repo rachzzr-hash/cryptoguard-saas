@@ -43,10 +43,11 @@ export async function initDB(): Promise<void> {
     "ALTER TABLE users ADD COLUMN stripe_customer_id VARCHAR(255)",
     "ALTER TABLE users ADD COLUMN subscription_status VARCHAR(50) DEFAULT 'inactive'",
     "ALTER TABLE users ADD COLUMN stripe_subscription_id VARCHAR(255)",
+    "ALTER TABLE users MODIFY COLUMN openId VARCHAR(255) DEFAULT NULL",
   ];
 
   for (const sql of migrations) {
-    try { await db.query(sql); } catch { /* column already exists */ }
+    try { await db.query(sql); } catch { /* column already exists or doesn't apply */ }
   }
 
   await db.query(`CREATE TABLE IF NOT EXISTS scanned_tokens (
