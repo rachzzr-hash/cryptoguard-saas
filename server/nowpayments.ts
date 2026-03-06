@@ -15,10 +15,12 @@ const PLAN_PRICES: Record<string, number> = {
 router.post("/create", authMiddleware, async (req: AuthRequest, res: Response) => {
   const { plan, currency } = req.body;
   if (!["pro", "business"].includes(plan)) return res.status(400).json({ error: "Plan invalide" });
-  if (!NP_KEY) return res.status(500).json({ error: "NOWPayments non configure (NOWPAYMENTS_API_KEY manquant)" });
+  if (!NP_KEY) return res.status(500).json({ error: "NOWPayments non configure" });
+
   const amount = PLAN_PRICES[plan];
-  const userId = req.user!.userId;
+  const userId = req.user!.id;
   const email = req.user!.email;
+
   try {
     const body = {
       price_amount: amount,
@@ -31,6 +33,7 @@ router.post("/create", authMiddleware, async (req: AuthRequest, res: Response) =
       cancel_url: `${process.env.APP_URL || "http://localhost:5173"}/pricing?cancelled=1`,
       is_fee_paid_by_user: false,
     };
+
     const resp = await fetch(`${NP_API}/invoice`, {
       method: "POST",
       headers: { "x-api-key": NP_KEY, "Content-Type": "application/json" },
@@ -38,11 +41,13 @@ router.post("/create", authMiddleware, async (req: AuthRequest, res: Response) =
     });
     const data: any = await resp.json();
     if (!resp.ok || !data.invoice_url) return res.status(500).json({ error: data.message || "Erreur NOWPayments" });
+
     const db = getPool();
     await db.query(
-      "INSERT INTO cg_crypto_payments (user_id, plan, order_id, currency, amount_usd, status) VALUES (?, ?, ?, ?, ?, 'pending') ON DUPLICATE KEY UPDATE status='pending'",
+      "INSERT INTO crypto_payments (user_id, plan, order_id, currency, amount_usd, status) VALUES (?, ?, ?, ?, ?, 'pending') ON DUPLICATE KEY UPDATE status='pending'",
       [userId, plan, body.order_id, currency || "sol", amount]
     );
+
     res.json({ invoice_url: data.invoice_url, payment_id: data.id, order_id: body.order_id });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -54,11 +59,11 @@ router.post("/webhook", async (req: Request, res: Response) => {
     const { payment_status, order_id } = req.body;
     if (["finished", "confirmed", "sending"].includes(payment_status)) {
       const db = getPool();
-      const [rows] = await db.query("SELECT * FROM cg_crypto_payments WHERE order_id=?", [order_id]);
+      const [rows] = await db.query("SELECT * FROM crypto_payments WHERE order_id=?", [order_id]) as any[];
       const payment = (rows as any[])[0];
       if (payment && payment.status !== "completed") {
-        await db.query("UPDATE cg_users SET plan=?, subscription_status='active' WHERE id=?", [payment.plan, payment.user_id]);
-        await db.query("UPDATE cg_crypto_payments SET status='completed' WHERE order_id=?", [order_id]);
+        await db.query("UPDATE users SET plan=?, subscription_status='active' WHERE id=?", [payment.plan, payment.user_id]);
+        await db.query("UPDATE crypto_payments SET status='completed' WHERE order_id=?", [order_id]);
         console.log(`[NOWPayments] Plan ${payment.plan} active pour user ${payment.user_id}`);
       }
     }
