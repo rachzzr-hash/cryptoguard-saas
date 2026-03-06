@@ -4,7 +4,7 @@ interface LandingProps {
   lang: Lang;
   onNav: (p: string) => void;
   stats?: { totalScanned: number; safeTokens: number; totalWallets: number };
-}h
+}
 
 export default function Landing({ lang, onNav, stats }: LandingProps) {
   return (
