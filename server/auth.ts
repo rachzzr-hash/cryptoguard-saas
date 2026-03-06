@@ -4,118 +4,107 @@ import jwt from "jsonwebtoken";
 import { getPool } from "./db.js";
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || "cryptoguard2026";
+const JWT_SECRET = process.env.JWT_SECRET || "cryptoguard_secret_2024";
 
 export interface AuthRequest extends Request {
-  user?: { userId: number; email: string; plan: string };
+  user?: { id: number; email: string; plan: string; role: string };
 }
 
-// ---- MIDDLEWARE ----
+// ---- MIDDLEWARE AUTH ----
 export function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
   const token = req.headers.authorization?.replace("Bearer ", "");
-  if (!token) return res.status(401).json({ error: "Token manquant" });
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
   try {
-    req.user = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    req.user = decoded;
     next();
   } catch {
-    res.status(401).json({ error: "Token invalide ou expiré" });
+    res.status(401).json({ error: "Invalid token" });
   }
 }
 
-export function planRequired(plans: string[]) {
+// ---- MIDDLEWARE PLAN ----
+export function planRequired(minPlan: string) {
+  const order = ["free", "pro", "business", "admin"];
   return (req: AuthRequest, res: Response, next: NextFunction) => {
-    if (!req.user) return res.status(401).json({ error: "Non authentifié" });
-    if (!plans.includes(req.user.plan)) {
-      return res.status(403).json({ error: "Plan insuffisant", required: plans });
-    }
+    if (req.user?.role === "admin") return next();
+    const userLevel = order.indexOf(req.user?.plan || "free");
+    const required = order.indexOf(minPlan);
+    if (userLevel < required) return res.status(403).json({ error: "Plan insuffisant" });
     next();
   };
 }
 
 // ---- REGISTER ----
 router.post("/register", async (req: Request, res: Response) => {
-  const { email, password, lang = "fr" } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: "Email et mot de passe requis" });
-  }
-  if (password.length < 8) {
-    return res.status(400).json({ error: "Mot de passe trop court (min 8 caractères)" });
-  }
   try {
+    const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ error: "Email et mot de passe requis" });
+    if (password.length < 6) return res.status(400).json({ error: "Mot de passe trop court (6 min)" });
+
     const db = getPool();
-    const [existing] = await db.query("SELECT id FROM cg_users WHERE email=?", [email]);
-    if ((existing as any[]).length > 0) {
-      return res.status(409).json({ error: "Email déjà utilisé" });
-    }
+    const [existing] = await db.query("SELECT id FROM users WHERE email=?", [email]) as any[];
+    if ((existing as any[]).length > 0) return res.status(409).json({ error: "Email déjà utilisé" });
+
     const hash = await bcrypt.hash(password, 12);
+    
+    // Premier utilisateur = admin automatiquement
+    const [allUsers] = await db.query("SELECT COUNT(*) as count FROM users") as any[];
+    const isFirst = (allUsers as any[])[0]?.count === 0;
+    const role = isFirst ? "admin" : "user";
+    const plan = isFirst ? "business" : "free";
+
     const [result] = await db.query(
-      "INSERT INTO cg_users (email, password_hash, lang) VALUES (?, ?, ?)",
-      [email, hash, lang]
+      "INSERT INTO users (email, password_hash, plan, role) VALUES (?, ?, ?, ?)",
+      [email, hash, plan, role]
+    ) as any[];
+
+    const token = jwt.sign(
+      { id: (result as any).insertId, email, plan, role },
+      JWT_SECRET,
+      { expiresIn: "30d" }
     );
-    const userId = (result as any).insertId;
-    const token = jwt.sign({ userId, email, plan: "free" }, JWT_SECRET, { expiresIn: "7d" });
-    res.json({ token, user: { id: userId, email, plan: "free", lang } });
-  } catch (e: any) {
+    res.json({ token, plan, role, email });
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Erreur serveur" });
   }
 });
 
 // ---- LOGIN ----
 router.post("/login", async (req: Request, res: Response) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: "Email et mot de passe requis" });
-  }
   try {
+    const { email, password } = req.body;
     const db = getPool();
-    const [rows] = await db.query("SELECT * FROM cg_users WHERE email=?", [email]);
+    const [rows] = await db.query("SELECT * FROM users WHERE email=?", [email]) as any[];
     const user = (rows as any[])[0];
-    if (!user) return res.status(401).json({ error: "Identifiants invalides" });
+    if (!user) return res.status(401).json({ error: "Email ou mot de passe incorrect" });
+
     const valid = await bcrypt.compare(password, user.password_hash);
-    if (!valid) return res.status(401).json({ error: "Identifiants invalides" });
+    if (!valid) return res.status(401).json({ error: "Email ou mot de passe incorrect" });
+
     const token = jwt.sign(
-      { userId: user.id, email: user.email, plan: user.plan },
+      { id: user.id, email: user.email, plan: user.plan, role: user.role || "user" },
       JWT_SECRET,
-      { expiresIn: "7d" }
+      { expiresIn: "30d" }
     );
-    res.json({
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        plan: user.plan,
-        lang: user.lang,
-        subscription_status: user.subscription_status,
-      },
-    });
-  } catch {
+    res.json({ token, plan: user.plan, role: user.role || "user", email: user.email });
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Erreur serveur" });
-  }
-});
+feat: add role field to JWT, auto-assign admin to first user, /me endpoint});
 
 // ---- ME ----
 router.get("/me", authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const db = getPool();
-    const [rows] = await db.query(
-      "SELECT id, email, plan, lang, subscription_status, trial_ends_at, created_at FROM cg_users WHERE id=?",
-      [req.user!.userId]
-    );
+    const [rows] = await db.query("SELECT id, email, plan, role, created_at FROM users WHERE id=?", [req.user?.id]) as any[];
     const user = (rows as any[])[0];
-    if (!user) return res.status(404).json({ error: "Utilisateur non trouvé" });
+    if (!user) return res.status(404).json({ error: "Utilisateur introuvable" });
     res.json(user);
-  } catch {
+  } catch (err) {
     res.status(500).json({ error: "Erreur serveur" });
   }
-});
-
-// ---- CHANGE LANGUAGE ----
-router.put("/lang", authMiddleware, async (req: AuthRequest, res: Response) => {
-  const { lang } = req.body;
-  const allowed = ["fr", "en", "es", "de", "pt", "ar"];
-  if (!allowed.includes(lang)) return res.status(400).json({ error: "Langue non supportée" });
-  await getPool().query("UPDATE cg_users SET lang=? WHERE id=?", [lang, req.user!.userId]);
-  res.json({ success: true, lang });
 });
 
 export default router;
