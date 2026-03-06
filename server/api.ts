@@ -9,70 +9,202 @@ router.get("/stats", authMiddleware, async (req: AuthRequest, res: Response) => 
   try {
     const db = getPool();
     const [safeRows] = await db.query("SELECT COUNT(*) as count FROM scanned_tokens WHERE status='SAFE'") as any[];
-    const safe = (safeRows as any[])[0];
-    const [riskyRows] = await db.query("SELECT COUNT(*) as count FROM scanned_tokens WHERE status='RISKY'") as any[];
-    const risky = (riskyRows as any[])[0];
     const [totalRows] = await db.query("SELECT COUNT(*) as count FROM scanned_tokens") as any[];
-    const total = (totalRows as any[])[0];
-    const [walletsRows] = await db.query("SELECT COUNT(*) as count FROM bundle_wallets") as any[];
-    const wallets = (walletsRows as any[])[0];
-    const [lastRows] = await db.query("SELECT scanned_at FROM scanned_tokens ORDER BY scanned_at DESC LIMIT 1") as any[];
-    const lastToken = (lastRows as any[])[0];
+    const [walletRows] = await db.query("SELECT COUNT(*) as count FROM bundle_wallets") as any[];
     res.json({
-      safeTokens: safe?.count || 0,
-      riskyTokens: risky?.count || 0,
-      totalScanned: total?.count || 0,
-      totalWallets: wallets?.count || 0,
-      lastScan: lastToken?.scanned_at || null,
+      totalScanned: (totalRows as any[])[0]?.count || 0,
+      safeTokens: (safeRows as any[])[0]?.count || 0,
+      totalWallets: (walletRows as any[])[0]?.count || 0,
     });
-  } catch {
-    res.status(500).json({ error: "Erreur DB" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "DB error" });
   }
 });
 
-// ---- SAFE TOKENS (plan pro + business) ----
-router.get("/safe-tokens", authMiddleware, planRequired(["pro", "business"]), async (req: AuthRequest, res: Response) => {
+// ---- TOKENS SAFE (free: 5, pro+: all) ----
+router.get("/tokens", authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const db = getPool();
-    const limit = req.user?.plan === "business" ? 200 : 50;
+    const plan = req.user?.plan || "free";
+    const source = req.query.source as string || "";
+    const limit = plan === "free" ? 5 : 1000;
+
+    let query = "SELECT * FROM scanned_tokens WHERE status='SAFE'";
+    const params: any[] = [];
+    if (source) { query += " AND source=?"; params.push(source); }
+    query += " ORDER BY scanned_at DESC LIMIT ?";
+    params.push(limit);
+
+    const [rows] = await db.query(query, params) as any[];
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "DB error" });
+  }
+});
+
+// ---- TOKENS PAR SOURCE ----
+router.get("/tokens/source/:source", authMiddleware, planRequired("pro"), async (req: AuthRequest, res: Response) => {
+  try {
+    const db = getPool();
     const [rows] = await db.query(
-      `SELECT token_address, token_name, token_score, liquidity, top_holder_pct, scanned_at FROM scanned_tokens WHERE status='SAFE' ORDER BY scanned_at DESC LIMIT ${limit}`
+      "SELECT * FROM scanned_tokens WHERE source=? ORDER BY scanned_at DESC LIMIT 100",
+      [req.params.source]
     ) as any[];
     res.json(rows);
-  } catch {
-    res.status(500).json({ error: "Erreur DB" });
+  } catch (err) {
+    res.status(500).json({ error: "DB error" });
   }
 });
 
-// ---- RUG WALLETS (plan business uniquement) ----
-router.get("/rug-wallets", authMiddleware, planRequired(["business"]), async (req: AuthRequest, res: Response) => {
+// ---- TOKENS PERFORMANTS ----
+router.get("/tokens/performing", authMiddleware, planRequired("pro"), async (req: AuthRequest, res: Response) => {
   try {
     const db = getPool();
     const [rows] = await db.query(
-      "SELECT wallet_address, win_rate, total_transactions, detected_at FROM bundle_wallets ORDER BY detected_at DESC LIMIT 100"
+      "SELECT * FROM scanned_tokens WHERE source='performing' OR source='pumpfun_trending' ORDER BY scanned_at DESC LIMIT 50"
     ) as any[];
     res.json(rows);
-  } catch {
-    res.status(500).json({ error: "Erreur DB" });
+  } catch (err) {
+    res.status(500).json({ error: "DB error" });
   }
 });
 
-// ---- PREVIEW TOKENS (plan free — 5 tokens floutés) ----
-router.get("/preview-tokens", authMiddleware, async (req: AuthRequest, res: Response) => {
+// ---- WALLETS RUGGERS ----
+router.get("/wallets", authMiddleware, planRequired("pro"), async (req: AuthRequest, res: Response) => {
   try {
     const db = getPool();
-    const [rows] = await db.query(
-      "SELECT token_address, token_name, token_score, liquidity, scanned_at FROM scanned_tokens WHERE status='SAFE' ORDER BY scanned_at DESC LIMIT 5"
-    ) as any[];
-    // Flouter les adresses pour les utilisateurs free
-    const masked = (rows as any[]).map((t, i) => ({
-      ...t,
-      token_address:
-        i < 2 ? t.token_address : t.token_address.slice(0, 4) + "****" + t.token_address.slice(-4),
-    }));
-    res.json(masked);
-  } catch {
-    res.status(500).json({ error: "Erreur DB" });
+    const [rows] = await db.query("SELECT * FROM bundle_wallets ORDER BY detected_at DESC LIMIT 100") as any[];
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "DB error" });
+  }
+});
+
+// ---- DASHBOARD STATS ----
+router.get("/dashboard/stats", authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const db = getPool();
+    const [totalRows] = await db.query("SELECT COUNT(*) as count FROM scanned_tokens") as any[];
+    const [safeRows] = await db.query("SELECT COUNT(*) as count FROM scanned_tokens WHERE status='SAFE'") as any[];
+    const [walletRows] = await db.query("SELECT COUNT(*) as count FROM bundle_wallets") as any[];
+    const [pumpRows] = await db.query("SELECT COUNT(*) as count FROM scanned_tokens WHERE source LIKE 'pumpfun%'") as any[];
+    const [axiomRows] = await db.query("SELECT COUNT(*) as count FROM scanned_tokens WHERE source LIKE 'axiom%'") as any[];
+    res.json({
+      totalScanned: (totalRows as any[])[0]?.count || 0,
+      safeTokens: (safeRows as any[])[0]?.count || 0,
+      totalWallets: (walletRows as any[])[0]?.count || 0,
+      pumpFunTokens: (pumpRows as any[])[0]?.count || 0,
+      axiomTokens: (axiomRows as any[])[0]?.count || 0,
+    });
+  } catch (err) {
+    res.status(500).json({ error: "DB error" });
+  }
+});
+
+// ========== ADMIN ROUTES ==========
+
+function adminOnly(req: AuthRequest, res: Response, next: any) {
+  if (req.user?.role !== "admin") return res.status(403).json({ error: "Admin only" });
+  next();
+}
+
+// Admin: tous les tokens (toutes sources, tous statuts)
+router.get("/admin/tokens", authMiddleware, adminOnly, async (req: AuthRequest, res: Response) => {
+  try {
+    const db = getPool();
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = 100;
+    const offset = (page - 1) * limit;
+    const status = req.query.status as string || "";
+    const source = req.query.source as string || "";
+
+    let query = "SELECT * FROM scanned_tokens";
+    const params: any[] = [];
+    const where: string[] = [];
+    if (status) { where.push("status=?"); params.push(status); }
+    if (source) { where.push("source=?"); params.push(source); }
+    if (where.length) query += " WHERE " + where.join(" AND ");
+    query += " ORDER BY scanned_at DESC LIMIT ? OFFSET ?";
+    params.push(limit, offset);
+
+    const [rows] = await db.query(query, params) as any[];
+    const [countRows] = await db.query("SELECT COUNT(*) as count FROM scanned_tokens") as any[];
+    res.json({ tokens: rows, total: (countRows as any[])[0]?.count || 0 });
+  } catch (err) {
+    res.status(500).json({ error: "DB error" });
+  }
+});
+
+// Admin: tous les utilisateurs
+router.get("/admin/users", authMiddleware, adminOnly, async (req: AuthRequest, res: Response) => {
+  try {
+    const db = getPool();
+    const [rows] = await db.query("SELECT id, email, plan, role, created_at FROM users ORDER BY created_at DESC") as any[];
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: "DB error" });
+  }
+});
+
+// Admin: modifier plan d'un user
+router.patch("/admin/users/:id", authMiddleware, adminOnly, async (req: AuthRequest, res: Response) => {
+  try {
+    const db = getPool();
+    const { plan, role } = req.body;
+    if (plan) await db.query("UPDATE users SET plan=? WHERE id=?", [plan, req.params.id]);
+    if (role) await db.query("UPDATE users SET role=? WHERE id=?", [role, req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "DB error" });
+  }
+});
+
+// Admin: supprimer token
+router.delete("/admin/tokens/:id", authMiddleware, adminOnly, async (req: AuthRequest, res: Response) => {
+  try {
+    const db = getPool();
+    await db.query("DELETE FROM scanned_tokens WHERE id=?", [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "DB error" });
+  }
+});
+
+// Admin: stats globales
+router.get("/admin/stats", authMiddleware, adminOnly, async (req: AuthRequest, res: Response) => {
+  try {
+    const db = getPool();
+    const [users] = await db.query("SELECT COUNT(*) as count FROM users") as any[];
+    const [tokens] = await db.query("SELECT COUNT(*) as count FROM scanned_tokens") as any[];
+    const [safe] = await db.query("SELECT COUNT(*) as count FROM scanned_tokens WHERE status='SAFE'") as any[];
+    const [risky] = await db.query("SELECT COUNT(*) as count FROM scanned_tokens WHERE status='RISKY'") as any[];
+    const [wallets] = await db.query("SELECT COUNT(*) as count FROM bundle_wallets") as any[];
+    const [bySource] = await db.query("SELECT source, COUNT(*) as count FROM scanned_tokens GROUP BY source") as any[];
+    const [plans] = await db.query("SELECT plan, COUNT(*) as count FROM users GROUP BY plan") as any[];
+    res.json({
+      users: (users as any[])[0]?.count || 0,
+      tokens: (tokens as any[])[0]?.count || 0,
+      safe: (safe as any[])[0]?.count || 0,
+      risky: (risky as any[])[0]?.count || 0,
+      wallets: (wallets as any[])[0]?.count || 0,
+      bySource: bySource,
+      plans: plans,
+    });
+feat: add admin routes, source filter, performing tokens endpoint    res.status(500).json({ error: "DB error" });
+  }
+});
+
+// Admin: lancer scan manuellement
+router.post("/admin/scan", authMiddleware, adminOnly, async (req: AuthRequest, res: Response) => {
+  try {
+    const { runScanner } = await import("./scanner.js");
+    runScanner().catch(console.error);
+    res.json({ message: "Scan lancé en arrière-plan" });
+  } catch (err) {
+    res.status(500).json({ error: "Erreur scan" });
   }
 });
 
