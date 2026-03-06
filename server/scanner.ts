@@ -1,5 +1,5 @@
 import fetch from "node-fetch";
-import { getPool } from "./db.js";
+import { getPool, initDB } from "./db.js";
 
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY;
 const HELIUS_RPC = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`;
@@ -219,6 +219,7 @@ export async function runScanner(): Promise<void> {
 
 // ---- RUGGER DETECTOR ----
 export async function runRuggerDetector(): Promise<void> {
+  await initDB(); // Recreate tables if dropped
   console.log("\n[Rugger] Detection ruggers...");
   const db = getPool();
   const [riskyTokens] = await db.query(
