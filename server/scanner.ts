@@ -4,6 +4,31 @@ import { getPool } from "./db.js";
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY;
 const HELIUS_RPC = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`;
 
+// ---- BOT INTEGRATION ----
+const BOT_API_URL = process.env.BOT_API_URL; // ex: https://solanatradingbot-production-xxx.up.railway.app
+const BOT_API_KEY = process.env.BOT_API_KEY;  // clé partagée avec CRYPTOGUARD_API_KEY du bot
+
+async function forwardTokenToBot(addr: string, name: string, score: number, liquidity: number): Promise<void> {
+  if (!BOT_API_URL) return; // pas de bot configuré
+  try {
+    const res = await fetch(`${BOT_API_URL}/api/cryptoguard/enqueue-token`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(BOT_API_KEY ? { "x-api-key": BOT_API_KEY } : {}),
+      },
+      body: JSON.stringify({ address: addr, symbol: name, name, score, liquidity }),
+    });
+    if (res.ok) {
+      console.log(`[Scanner] ➡️  Token forwarded to bot: ${name} (${addr})`);
+    } else {
+      console.warn(`[Scanner] Bot enqueue returned ${res.status} for ${name}`);
+    }
+  } catch (err) {
+    console.error(`[Scanner] Failed to forward token to bot:`, err);
+  }
+}
+
 // ---- DEXSCREENER ----
 async function getDexScreenerTokens(): Promise<any[]> {
   try {
@@ -60,15 +85,11 @@ async function getPumpFunTrendingTokens(): Promise<any[]> {
 // ---- AXIOM / RAYDIUM LAUNCHPAD ----
 async function getAxiomNewTokens(): Promise<any[]> {
   try {
-    // Axiom uses Raydium launchpad - fetch via DexScreener filtering by new listings
     const res = await fetch("https://api.dexscreener.com/latest/dex/search?q=solana");
     const data = await res.json() as any;
     const pairs = (data?.pairs || [])
       .filter((p: any) => p.chainId === "solana" && p.dexId === "raydium")
-      .filter((p: any) => {
-        const age = Date.now() - (p.pairCreatedAt || 0);
-        return age < 3600000 * 6; // less than 6 hours old
-      })
+      .filter((p: any) => { const age = Date.now() - (p.pairCreatedAt || 0); return age < 3600000 * 6; })
       .sort((a: any, b: any) => (b.volume?.h24 || 0) - (a.volume?.h24 || 0))
       .slice(0, 20);
     return pairs.map((p: any) => ({
@@ -86,13 +107,12 @@ async function getAxiomNewTokens(): Promise<any[]> {
 
 async function getAxiomPerformingTokens(): Promise<any[]> {
   try {
-    // Top performing tokens by volume on Raydium/Orca in last 24h
     const res = await fetch("https://api.dexscreener.com/latest/dex/search?q=sol");
     const data = await res.json() as any;
     const pairs = (data?.pairs || [])
       .filter((p: any) => p.chainId === "solana")
       .filter((p: any) => (p.volume?.h24 || 0) > 50000 && (p.liquidity?.usd || 0) > 10000)
-      .filter((p: any) => (p.priceChange?.h24 || 0) > 20) // +20% in 24h
+      .filter((p: any) => (p.priceChange?.h24 || 0) > 20)
       .sort((a: any, b: any) => (b.priceChange?.h24 || 0) - (a.priceChange?.h24 || 0))
       .slice(0, 15);
     return pairs.map((p: any) => ({
@@ -159,6 +179,11 @@ async function processToken(addr: string, name: string, source: string, extraDat
       [addr, name.substring(0, 191), score, liquidity, topHolder, status, source]
     );
 
+    if (isSafe) {
+      // Envoyer au bot de trading
+      await forwardTokenToBot(addr, name, score, liquidity);
+    }
+
     return isSafe ? "safe" : "risky";
   } catch { return "skip"; }
 }
@@ -166,14 +191,10 @@ async function processToken(addr: string, name: string, source: string, extraDat
 // ---- SCANNER PRINCIPAL ----
 export async function runScanner(): Promise<void> {
   console.log("\n[Scanner] Scan en cours...");
-  const db = getPool();
 
-  // 1. DexScreener latest
   const dexTokens = await getDexScreenerTokens();
-  // 2. Pump.fun new + trending
   const pumpNew = await getPumpFunNewTokens();
   const pumpTrending = await getPumpFunTrendingTokens();
-  // 3. Axiom/Raydium new + performing
   const axiomNew = await getAxiomNewTokens();
   const axiomPerforming = await getAxiomPerformingTokens();
 
@@ -186,15 +207,13 @@ export async function runScanner(): Promise<void> {
   ].filter(t => t.addr);
 
   let safe = 0, risky = 0, skipped = 0;
-
   for (const token of allTokens) {
     const result = await processToken(token.addr, token.name, token.source, token.extra);
-    if (result === "safe") { safe++; console.log(`[Scanner] SAFE: ${token.name} [${token.source}]`); }
+    if (result === "safe") { safe++; console.log(`[Scanner] ✅ SAFE: ${token.name} [${token.source}]`); }
     else if (result === "risky") risky++;
     else skipped++;
     await new Promise(r => setTimeout(r, 300));
   }
-
   console.log(`[Scanner] Resultat: ${safe} SAFE | ${risky} RISKY | ${skipped} ignorés (${allTokens.length} total)`);
 }
 
@@ -240,7 +259,9 @@ export async function runRuggerDetector(): Promise<void> {
           walletCount++;
         }
       }
-    } catch (err) { console.error("[Rugger] Erreur:", err); }
+    } catch (err) {
+      console.error("[Rugger] Erreur:", err);
+    }
     await new Promise(r => setTimeout(r, 500));
   }
   console.log(`[Rugger] ${walletCount} nouveaux wallets détectés`);
