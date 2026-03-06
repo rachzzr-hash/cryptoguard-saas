@@ -5,7 +5,6 @@ let pool: mysql.Pool | null = null;
 export function getPool(): mysql.Pool {
   if (!pool) {
     if (process.env.DATABASE_URL) {
-      // Use full connection URL if provided (Railway, PlanetScale, etc.)
       pool = mysql.createPool(process.env.DATABASE_URL + "?waitForConnections=true&connectionLimit=10&queueLimit=0");
     } else {
       pool = mysql.createPool({
@@ -30,7 +29,7 @@ export async function initDB(): Promise<void> {
     CREATE TABLE IF NOT EXISTS users (
       id INT AUTO_INCREMENT PRIMARY KEY,
       email VARCHAR(255) UNIQUE NOT NULL,
-      password_hash VARCHAR(255) NOT NULL,
+      password_hash VARCHAR(255) NOT NULL DEFAULT '',
       plan ENUM('free','pro','business') DEFAULT 'free',
       role VARCHAR(50) DEFAULT 'user',
       stripe_customer_id VARCHAR(255),
@@ -40,14 +39,15 @@ export async function initDB(): Promise<void> {
     )
   `);
 
-  // Ajouter colonnes si elles n'existent pas
-  const alterCols = [
+  // Migrations: add missing columns safely
+  const migrations = [
+    "ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) NOT NULL DEFAULT ''",
     "ALTER TABLE users ADD COLUMN role VARCHAR(50) DEFAULT 'user'",
     "ALTER TABLE users ADD COLUMN stripe_customer_id VARCHAR(255)",
     "ALTER TABLE users ADD COLUMN subscription_status VARCHAR(50) DEFAULT 'inactive'",
     "ALTER TABLE users ADD COLUMN stripe_subscription_id VARCHAR(255)",
   ];
-  for (const sql of alterCols) {
+  for (const sql of migrations) {
     try { await db.query(sql); } catch { /* column already exists */ }
   }
 
@@ -65,7 +65,6 @@ export async function initDB(): Promise<void> {
       scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
-
   try { await db.query("ALTER TABLE scanned_tokens ADD COLUMN source VARCHAR(100) DEFAULT 'dexscreener'"); } catch { /* exists */ }
 
   // Table bundle_wallets
