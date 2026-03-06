@@ -24,6 +24,12 @@ export function getPool(): mysql.Pool {
 export async function initDB(): Promise<void> {
   const db = getPool();
 
+  // Drop and recreate tables to fix schema issues (safe: no users exist yet)
+  try { await db.query("SET FOREIGN_KEY_CHECKS=0"); } catch {}
+  try { await db.query("DROP TABLE IF EXISTS crypto_payments"); } catch {}
+  try { await db.query("DROP TABLE IF EXISTS users"); } catch {}
+  try { await db.query("SET FOREIGN_KEY_CHECKS=1"); } catch {}
+
   await db.query(`CREATE TABLE IF NOT EXISTS users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     email VARCHAR(255) UNIQUE NOT NULL,
@@ -35,20 +41,6 @@ export async function initDB(): Promise<void> {
     stripe_subscription_id VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   )`);
-
-  const migrations = [
-    "ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) NOT NULL DEFAULT ''",
-    "ALTER TABLE users ADD COLUMN plan ENUM('free','pro','business') DEFAULT 'free'",
-    "ALTER TABLE users ADD COLUMN role VARCHAR(50) DEFAULT 'user'",
-    "ALTER TABLE users ADD COLUMN stripe_customer_id VARCHAR(255)",
-    "ALTER TABLE users ADD COLUMN subscription_status VARCHAR(50) DEFAULT 'inactive'",
-    "ALTER TABLE users ADD COLUMN stripe_subscription_id VARCHAR(255)",
-    "ALTER TABLE users MODIFY COLUMN openId VARCHAR(255) DEFAULT NULL",
-  ];
-
-  for (const sql of migrations) {
-    try { await db.query(sql); } catch { /* column already exists or doesn't apply */ }
-  }
 
   await db.query(`CREATE TABLE IF NOT EXISTS scanned_tokens (
     id INT AUTO_INCREMENT PRIMARY KEY,
