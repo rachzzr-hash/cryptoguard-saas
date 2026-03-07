@@ -42,7 +42,7 @@ router.post("/register", async (req: Request, res: Response) => {
     if (!email || !password) return res.status(400).json({ error: "Email et mot de passe requis" });
     if (password.length < 6) return res.status(400).json({ error: "Mot de passe trop court (6 min)" });
     const db = getPool();
-    const [existing] = await db.query("SELECT id FROM users WHERE email=?", [email]) as any[];
+    const [existing] = await db.query("SELECT id FROM cg_users WHERE email=?", [email]) as any[];
     if ((existing as any[]).length > 0) return res.status(409).json({ error: "Email deja utilise" });
 
     const hash = await bcrypt.hash(password, 12);
@@ -52,7 +52,7 @@ router.post("/register", async (req: Request, res: Response) => {
     const plan = isFirst ? "business" : "free";
 
     const [result] = await db.query(
-      "INSERT INTO users (email, password_hash, plan, role) VALUES (?, ?, ?, ?)",
+      "INSERT INTO cg_users (email, password_hash, plan, role) VALUES (?, ?, ?, ?)",
       [email, hash, plan, role]
     ) as any[];
 
@@ -74,7 +74,7 @@ router.post("/login", async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
     const db = getPool();
-    const [rows] = await db.query("SELECT * FROM users WHERE email=?", [email]) as any[];
+    const [rows] = await db.query("SELECT * FROM cg_users WHERE email=?", [email]) as any[];
     const user = (rows as any[])[0];
     if (!user) return res.status(401).json({ error: "Email ou mot de passe incorrect" });
 
@@ -98,7 +98,7 @@ router.post("/login", async (req: Request, res: Response) => {
 router.get("/me", authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const db = getPool();
-    const [rows] = await db.query("SELECT id, email, plan, role, created_at FROM users WHERE id=?", [req.user?.id]) as any[];
+    const [rows] = await db.query("SELECT id, email, plan, role, created_at FROM cg_users WHERE id=?", [req.user?.id]) as any[];
     const user = (rows as any[])[0];
     if (!user) return res.status(404).json({ error: "Utilisateur introuvable" });
     res.json(user);
