@@ -46,7 +46,7 @@ router.post("/register", async (req: Request, res: Response) => {
     if ((existing as any[]).length > 0) return res.status(409).json({ error: "Email deja utilise" });
 
     const hash = await bcrypt.hash(password, 12);
-    const [allUsers] = await db.query("SELECT COUNT(*) as count FROM users") as any[];
+    const [allUsers] = await db.query("SELECT COUNT(*) as count FROM cg_users") as any[];
     const isFirst = (allUsers as any[])[0]?.count === 0;
     const role = isFirst ? "admin" : "user";
     const plan = isFirst ? "business" : "free";
