@@ -42,8 +42,8 @@ export async function initDB(): Promise<void> {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
-      await db.query(`ALTER TABLE cg_users ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'user'`);
-      await db.query(`ALTER TABLE cg_users ADD COLUMN IF NOT EXISTS subscription_status VARCHAR(50) DEFAULT 'inactive'`);
+      await db.query(`ALTER TABLE cg_users ADD COLUMN role VARCHAR(50) DEFAULT 'user'`);
+      await db.query(`ALTER TABLE cg_users ADD COLUMN subscription_status VARCHAR(50) DEFAULT 'inactive'`);
 
   // Scanned tokens table
   await db.query(`
