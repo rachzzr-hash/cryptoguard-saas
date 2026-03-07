@@ -4,7 +4,7 @@ let pool: mysql.Pool | null = null;
 
 export function getPool(): mysql.Pool {
   if (!pool) {
-    if (process.env.DATABASE_URL) {h
+    if (process.env.DATABASE_URL) {
       pool = mysql.createPool(
         process.env.DATABASE_URL +
           "?waitForConnections=true&connectionLimit=10&queueLimit=0"
