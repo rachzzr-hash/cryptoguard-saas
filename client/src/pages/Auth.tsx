@@ -20,23 +20,25 @@ export default function Auth({ lang, mode, onNav, onSuccess }: AuthProps) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+
     if (!isLogin && password !== confirmPassword) {
       setError(lang === "fr" ? "Les mots de passe ne correspondent pas" : "Passwords don't match");
       return;
     }
+
     setLoading(true);
     try {
       const res = await fetch(`/api/auth/${isLogin ? "login" : "register"}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, confirmPassword, lang }),
+        body: JSON.stringify({ email, password, lang }),
       });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || t("common.error", lang));
       } else {
         localStorage.setItem("cg_token", data.token);
-        onSuccess(data, data.token);
+        onSuccess(data.user, data.token);
       }
     } catch {
       setError(t("common.error", lang));
@@ -47,32 +49,40 @@ export default function Auth({ lang, mode, onNav, onSuccess }: AuthProps) {
 
   return (
     <div
-      className="min-h-screen flex items-center justify-center px-4 py-12"
-      style={{ background: "linear-gradient(135deg, #f4f4f8 0%, #ede9f6 100%)" }}
+      className="min-h-screen flex items-center justify-center px-4"
+      style={{ background: "#050510" }}
       dir={lang === "ar" ? "rtl" : "ltr"}
     >
-      {/* Background decoration */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-96 h-96 bg-violet-200/40 rounded-full blur-3xl"></div>
-        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-purple-200/40 rounded-full blur-3xl"></div>
-      </div>
+      {/* Glow orb */}
+      <div style={{
+        position: "fixed", top: "30%", left: "50%",
+        transform: "translate(-50%, -50%)",
+        width: "500px", height: "300px",
+        background: "radial-gradient(circle, rgba(124,58,237,0.15) 0%, rgba(6,182,212,0.04) 50%, transparent 70%)",
+        pointerEvents: "none",
+        zIndex: 0,
+      }} />
 
-      <div className="w-full max-w-md relative">
+      <div className="w-full max-w-md relative z-10">
         {/* Logo */}
         <div className="text-center mb-8">
-          <button
-            onClick={() => onNav("home")}
-            className="w-16 h-16 bg-gradient-to-br from-violet-500 to-purple-700 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-4 shadow-lg hover:shadow-xl transition-all hover:-translate-y-0.5"
-          >
-            🛡️
-          </button>
-          <h1 className="text-2xl font-bold text-gray-800">CryptoGuard</h1>
-          <p className="text-gray-500 text-sm mt-1">{t(isLogin ? "auth.login" : "auth.register", lang)}</p>
+          <button onClick={() => onNav("home")} className="text-3xl mb-2 block mx-auto">🛡️</button>
+          <h1 className="text-xl font-bold text-white">CryptoGuard</h1>
+          <p className="text-sm mt-1" style={{ color: "#64748b" }}>{t(isLogin ? "auth.login" : "auth.register", lang)}</p>
         </div>
 
-        <div className="bg-white/80 backdrop-blur-xl border border-violet-100 rounded-3xl p-8 shadow-xl">
+        <div className="rounded-2xl p-8" style={{
+          background: "rgba(255,255,255,0.03)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          backdropFilter: "blur(20px)",
+          boxShadow: "0 0 40px rgba(124,58,237,0.08)",
+        }}>
           {!isLogin && (
-            <div className="flex items-center gap-2 bg-violet-50 border border-violet-200 rounded-xl px-4 py-3 mb-6 text-sm text-violet-700">
+            <div className="flex items-center gap-2 rounded-xl px-4 py-2.5 mb-6 text-sm" style={{
+              background: "rgba(124,58,237,0.1)",
+              border: "1px solid rgba(124,58,237,0.2)",
+              color: "#a78bfa",
+            }}>
               <span>🎁</span>
               <span>{t("auth.trial", lang)}</span>
             </div>
@@ -80,18 +90,24 @@ export default function Auth({ lang, mode, onNav, onSuccess }: AuthProps) {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="text-sm font-semibold text-gray-600 mb-1.5 block">{t("auth.email", lang)}</label>
+              <label className="text-sm mb-1.5 block" style={{ color: "#94a3b8" }}>{t("auth.email", lang)}</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 placeholder="you@example.com"
-                className="w-full bg-gray-50 border border-violet-200 focus:border-violet-500 focus:bg-white rounded-xl px-4 py-3 text-gray-800 text-sm outline-none transition-all"
+                className="w-full rounded-xl px-4 py-2.5 text-white text-sm outline-none transition-all"
+                style={{
+                  background: "rgba(255,255,255,0.04)",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                }}
+                onFocus={(e) => (e.target.style.borderColor = "rgba(124,58,237,0.6)")}
+                onBlur={(e) => (e.target.style.borderColor = "rgba(255,255,255,0.1)")}
               />
             </div>
             <div>
-              <label className="text-sm font-semibold text-gray-600 mb-1.5 block">{t("auth.password", lang)}</label>
+              <label className="text-sm mb-1.5 block" style={{ color: "#94a3b8" }}>{t("auth.password", lang)}</label>
               <input
                 type="password"
                 value={password}
@@ -99,62 +115,70 @@ export default function Auth({ lang, mode, onNav, onSuccess }: AuthProps) {
                 required
                 minLength={8}
                 placeholder="••••••••"
-                className="w-full bg-gray-50 border border-violet-200 focus:border-violet-500 focus:bg-white rounded-xl px-4 py-3 text-gray-800 text-sm outline-none transition-all"
+                className="w-full rounded-xl px-4 py-2.5 text-white text-sm outline-none transition-all"
+                style={{
+                  background: "rgba(255,255,255,0.04)",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                }}
+                onFocus={(e) => (e.target.style.borderColor = "rgba(124,58,237,0.6)")}
+                onBlur={(e) => (e.target.style.borderColor = "rgba(255,255,255,0.1)")}
               />
             </div>
             {!isLogin && (
               <div>
-                <label className="text-sm font-semibold text-gray-600 mb-1.5 block">{t("auth.confirm_password", lang)}</label>
+                <label className="text-sm mb-1.5 block" style={{ color: "#94a3b8" }}>{t("auth.confirm_password", lang)}</label>
                 <input
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
                   placeholder="••••••••"
-                  className="w-full bg-gray-50 border border-violet-200 focus:border-violet-500 focus:bg-white rounded-xl px-4 py-3 text-gray-800 text-sm outline-none transition-all"
+                  className="w-full rounded-xl px-4 py-2.5 text-white text-sm outline-none transition-all"
+                  style={{
+                    background: "rgba(255,255,255,0.04)",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                  }}
+                  onFocus={(e) => (e.target.style.borderColor = "rgba(124,58,237,0.6)")}
+                  onBlur={(e) => (e.target.style.borderColor = "rgba(255,255,255,0.1)")}
                 />
               </div>
             )}
+
             {error && (
-              <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-600 text-sm flex items-center gap-2">
-                <span>⚠️</span> {error}
+              <div className="rounded-xl px-4 py-2.5 text-sm" style={{
+                background: "rgba(239,68,68,0.1)",
+                border: "1px solid rgba(239,68,68,0.25)",
+                color: "#fca5a5",
+              }}>
+                ⚠️ {error}
               </div>
             )}
+
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 bg-gradient-to-r from-violet-600 to-purple-700 hover:from-violet-700 hover:to-purple-800 disabled:opacity-60 text-white font-bold rounded-xl text-sm transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0"
+              className="w-full py-3 text-white font-semibold rounded-xl text-sm transition-all duration-200 disabled:opacity-60"
+              style={{
+                background: "linear-gradient(135deg, #7C3AED 0%, #06B6D4 100%)",
+                boxShadow: loading ? "none" : "0 0 24px rgba(124,58,237,0.4)",
+              }}
             >
-              {loading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block"></span>
-                  {t("common.loading", lang)}
-                </span>
-              ) : t(isLogin ? "auth.login.cta" : "auth.register.cta", lang)}
+              {loading ? t("common.loading", lang) : t(isLogin ? "auth.login.cta" : "auth.register.cta", lang)}
             </button>
           </form>
 
-          <div className="mt-6 text-center text-sm text-gray-500">
+          <div className="mt-5 text-center text-sm" style={{ color: "#64748b" }}>
             {t(isLogin ? "auth.no_account" : "auth.has_account", lang)}{" "}
             <button
               onClick={() => onNav(isLogin ? "register" : "login")}
-              className="text-violet-600 hover:text-violet-800 font-semibold transition-colors"
+              className="hover:underline"
+              style={{ color: "#a78bfa" }}
             >
               {t(isLogin ? "nav.register" : "nav.login", lang)}
             </button>
           </div>
         </div>
-
-        {/* Back to home */}
-        <div className="text-center mt-4">
-          <button
-            onClick={() => onNav("home")}
-            className="text-gray-400 hover:text-violet-600 text-sm transition-colors"
-          >
-            ← {lang === "fr" ? "Retour à l'accueil" : lang === "en" ? "Back to home" : "Volver al inicio"}
-          </button>
-        </div>
       </div>
     </div>
   );
-  }
+                  }
