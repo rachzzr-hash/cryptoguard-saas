@@ -4,7 +4,7 @@ let pool: mysql.Pool | null = null;
 
 export function getPool(): mysql.Pool {
   if (!pool) {
-    if (process.env.DATABASE_URL) {
+    if (process.env.DATABASE_URL) {h
       pool = mysql.createPool(
         process.env.DATABASE_URL +
           "?waitForConnections=true&connectionLimit=10&queueLimit=0"
@@ -30,7 +30,7 @@ export async function initDB(): Promise<void> {
 
   // Users table — CREATE only, never DROP (preserve accounts)
   await db.query(`
-    CREATE TABLE IF NOT EXISTS users (
+    CREATE TABLE IF NOT EXISTS cg_users (
       id INT AUTO_INCREMENT PRIMARY KEY,
       email VARCHAR(255) UNIQUE NOT NULL,
       password_hash VARCHAR(255) NOT NULL DEFAULT '',
