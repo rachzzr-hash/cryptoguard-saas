@@ -45,7 +45,8 @@ router.post("/checkout", authMiddleware, async (req: AuthRequest, res: Response)
       mode: "subscription",
       success_url: `${process.env.APP_URL || "http://localhost:5173"}/dashboard?success=1`,
       cancel_url: `${process.env.APP_URL || "http://localhost:5173"}/pricing?cancelled=1`,
-      metadata: { userId: String(req.user!.id), plan },
+      subscription_data: { trial_period_days: 7 },
+    metadata: { userId: String(req.user!.id), plan },
     });
 
     res.json({ url: session.url });
