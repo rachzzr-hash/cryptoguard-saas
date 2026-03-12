@@ -10,7 +10,15 @@ import TelegramTutorial from "./pages/TelegramTutorial";
 type Page = "home" | "login" | "register" | "pricing" | "dashboard" | "telegram";
 
 export default function App() {
-  const [page, setPage] = useState<Page>("home");
+  const [page, setPage] = useState<Page>(() => {
+    const path = window.location.pathname;
+    if (path === "/register") return "register";
+    if (path === "/login") return "login";
+    if (path === "/dashboard") return "dashboard";
+    if (path === "/pricing") return "pricing";
+    if (path === "/telegram") return "telegram";
+    return "home";
+  });
   const [lang, setLang] = useState<Lang>("fr");
   const [user, setUser] = useState<any>(null);
   const [token, setToken] = useState<string>("");
