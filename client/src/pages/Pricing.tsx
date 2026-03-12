@@ -23,7 +23,7 @@ function CryptoModal({ plan, lang, onClose, onPay }: {
   const [selected, setSelected] = useState("sol");
   const title = lang === "fr" ? "Payer en crypto" : lang === "es" ? "Pagar con cripto" : lang === "ar" ? "الدفع بالعملة المشفرة" : "Pay with crypto";
   const subtitle = lang === "fr" ? "Choisissez votre cryptomonnaie" : lang === "es" ? "Elige tu criptomoneda" : lang === "ar" ? "اختر عملتك المشفرة" : "Choose your cryptocurrency";
-  const price = plan === "pro" ? 29 : 79;
+  const price = plan === "pro" ? 25 : 50;
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 px-4">
       <div className="bg-[#161b22] border border-[#30363d] rounded-2xl p-6 w-full max-w-sm">
@@ -164,7 +164,7 @@ export default function Pricing({ lang, user, onNav, onCheckout, onCryptoCheckou
             <PlanCard
               name={t("pricing.pro.name", lang)}
               desc={t("pricing.pro.desc", lang)}
-              price={29}
+              price={25}
               currency={t("pricing.monthly", lang)}
               features={[
                 t("pricing.pro.f1", lang),
@@ -193,7 +193,7 @@ export default function Pricing({ lang, user, onNav, onCheckout, onCryptoCheckou
             <PlanCard
               name={t("pricing.business.name", lang)}
               desc={t("pricing.business.desc", lang)}
-              price={79}
+              price={50}
               currency={t("pricing.monthly", lang)}
               features={[
                 t("pricing.business.f1", lang),
