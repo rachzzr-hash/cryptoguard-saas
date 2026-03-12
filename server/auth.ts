@@ -37,32 +37,26 @@ export function planRequired(minPlan: string) {
 
 // ---- REGISTER ----
 router.post("/register", async (req: Request, res: Response) => {
+  const { email, password, lang } = req.body || {};
+  if (!email || !password) return res.status(400).json({ error: "Email et mot de passe requis" });
   try {
-    const { email, password } = req.body;
-    if (!email || !password) return res.status(400).json({ error: "Email et mot de passe requis" });
-    if (password.length < 6) return res.status(400).json({ error: "Mot de passe trop court (6 min)" });
     const db = getPool();
     const [existing] = await db.query("SELECT id FROM cg_users WHERE email=?", [email]) as any[];
-    if ((existing as any[]).length > 0) return res.status(409).json({ error: "Email deja utilise" });
+    if ((existing as any[]).length > 0) return res.status(409).json({ error: "Email déjà utilisé" });
 
-    const hash = await bcrypt.hash(password, 12);
-    const [allUsers] = await db.query("SELECT COUNT(*) as count FROM cg_users") as any[];
-    const isFirst = (allUsers as any[])[0]?.count === 0;
-    const role = isFirst ? "admin" : "user";
-    const plan = isFirst ? "business" : "free";
-
+    const hash = await bcrypt.hash(password, 10);
     const [result] = await db.query(
-      "INSERT INTO cg_users (email, password_hash, plan, role) VALUES (?, ?, ?, ?)",
-      [email, hash, plan, role]
+      "INSERT INTO cg_users (email, password_hash, plan, role, lang) VALUES (?, ?, 'free', 'user', ?)",
+      [email, hash, lang || "fr"]
     ) as any[];
 
+    const newUser = { id: (result as any).insertId, email, plan: "free", role: "user", lang: lang || "fr" };
     const token = jwt.sign(
-      { id: (result as any).insertId, email, plan, role },
+      { id: newUser.id, email: newUser.email, plan: newUser.plan, role: newUser.role },
       JWT_SECRET,
       { expiresIn: "30d" }
     );
-
-    res.json({ token, plan, role, email });
+    res.json({ token, user: newUser });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erreur serveur" });
@@ -71,8 +65,9 @@ router.post("/register", async (req: Request, res: Response) => {
 
 // ---- LOGIN ----
 router.post("/login", async (req: Request, res: Response) => {
+  const { email, password } = req.body || {};
+  if (!email || !password) return res.status(400).json({ error: "Email et mot de passe requis" });
   try {
-    const { email, password } = req.body;
     const db = getPool();
     const [rows] = await db.query("SELECT * FROM cg_users WHERE email=?", [email]) as any[];
     const user = (rows as any[])[0];
@@ -87,7 +82,16 @@ router.post("/login", async (req: Request, res: Response) => {
       { expiresIn: "30d" }
     );
 
-    res.json({ token, plan: user.plan, role: user.role || "user", email: user.email });
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        plan: user.plan,
+        role: user.role || "user",
+        lang: user.lang || "fr",
+      },
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erreur serveur" });
@@ -98,10 +102,23 @@ router.post("/login", async (req: Request, res: Response) => {
 router.get("/me", authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const db = getPool();
-    const [rows] = await db.query("SELECT id, email, plan, role, created_at FROM cg_users WHERE id=?", [req.user?.id]) as any[];
+    const [rows] = await db.query("SELECT id, email, plan, role, lang, created_at FROM cg_users WHERE id=?", [req.user?.id]) as any[];
     const user = (rows as any[])[0];
     if (!user) return res.status(404).json({ error: "Utilisateur introuvable" });
     res.json(user);
+  } catch (err) {
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
+// ---- UPDATE LANG ----
+router.put("/lang", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const { lang } = req.body || {};
+  if (!lang) return res.status(400).json({ error: "Lang requis" });
+  try {
+    const db = getPool();
+    await db.query("UPDATE cg_users SET lang=? WHERE id=?", [lang, req.user?.id]);
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: "Erreur serveur" });
   }
