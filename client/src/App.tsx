@@ -112,7 +112,7 @@ export default function App() {
   const dir = lang === "ar" ? "rtl" : "ltr";
 
   return (
-    <div dir={dir} className="min-h-screen bg-[#050510] text-white">
+    <div dir={dir} style={{ background: "#020617" }} className="min-h-screen text-white">
       <Header
         lang={lang}
         onLangChange={handleLangChange}
@@ -135,4 +135,4 @@ export default function App() {
       {page === "telegram" && <TelegramTutorial lang={lang} onNav={setPage as any} />}
     </div>
   );
-        }
+}
