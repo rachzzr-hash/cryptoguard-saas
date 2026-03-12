@@ -1,5 +1,5 @@
 import { type Lang } from "../i18n";
-import { useState } from "react";
+import React, { useState } from "react";
 
 interface TelegramTutorialProps {
   lang: Lang;
