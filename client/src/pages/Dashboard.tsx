@@ -173,7 +173,7 @@ export default function Dashboard({ lang, user, token, onNav }: DashboardProps) 
                           const sStyle=score>=80?{background:"rgba(16,185,129,0.15)",color:"#34d399",border:"1px solid rgba(16,185,129,0.3)"}:score>=60?{background:"rgba(234,179,8,0.15)",color:"#fbbf24",border:"1px solid rgba(234,179,8,0.3)"}:{background:"rgba(239,68,68,0.15)",color:"#f87171",border:"1px solid rgba(239,68,68,0.3)"};
                           const thPct=tk.top_holder_pct||0;
                           return(
-                            <tr key={tk.token_address} style={{borderBottom:"1px solid rgba(6,182,212,0.07)"}}
+                            <tr key={tk.token_address} style={{borderBottom:"1px solid rgba(6,182,212,0.07)", cursor:"pointer"}} onClick={() => window.open(`https://dexscreener.com/solana/${tk.token_address}`, "_blank")}>
                               onMouseEnter={e=>(e.currentTarget.style.background="rgba(6,182,212,0.04)")}
                               onMouseLeave={e=>(e.currentTarget.style.background="transparent")}>
                               <td className="px-4 py-3 font-bold text-white">{tk.token_name||"Unknown"}</td>
