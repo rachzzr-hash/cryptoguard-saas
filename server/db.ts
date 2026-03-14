@@ -83,5 +83,9 @@ export async function initDB(): Promise<void> {
     )
   `);
 
+  // Migration: ajouter rugger_checked si absent
+  try {
+    await db.query("ALTER TABLE scanned_tokens ADD COLUMN rugger_checked TINYINT DEFAULT 0");
+  } catch (_) {} // colonne déjà existante
   console.log("Database initialized successfully");
 }
