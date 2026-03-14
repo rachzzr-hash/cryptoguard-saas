@@ -229,7 +229,7 @@ export async function runRuggerDetector(): Promise<void> {
   }
 
   const [riskyTokens] = await db.query(
-    "SELECT token_address FROM scanned_tokens WHERE status='RISKY' ORDER BY scanned_at DESC LIMIT 20"
+    "SELECT token_address FROM scanned_tokens WHERE status='RISKY' AND rugger_checked=0 ORDER BY scanned_at DESC LIMIT 20"
   ) as any[];
 
   let walletCount = 0;
@@ -297,7 +297,8 @@ export async function runRuggerDetector(): Promise<void> {
     } catch (err) {
       console.error("[Rugger] Erreur:", err);
     }
-    await new Promise(r => setTimeout(r, 500));
+    await db.query("UPDATE scanned_tokens SET rugger_checked=1 WHERE token_address=?", [token.token_address]);
+      await new Promise(r => setTimeout(r, 500));
   }
 
   console.log(`[Rugger] ${walletCount} nouveaux wallets détectés`);
