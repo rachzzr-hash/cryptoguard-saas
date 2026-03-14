@@ -219,51 +219,86 @@ export async function runScanner(): Promise<void> {
 
 // ---- RUGGER DETECTOR ----
 export async function runRuggerDetector(): Promise<void> {
-  await initDB(); // Recreate tables if dropped
+  await initDB();
   console.log("\n[Rugger] Detection ruggers...");
   const db = getPool();
+
+  if (!HELIUS_API_KEY) {
+    console.warn("[Rugger] HELIUS_API_KEY non configuré - détection impossible");
+    return;
+  }
+
   const [riskyTokens] = await db.query(
-    "SELECT token_address FROM scanned_tokens WHERE status='RISKY' ORDER BY scanned_at DESC LIMIT 10"
+    "SELECT token_address FROM scanned_tokens WHERE status='RISKY' ORDER BY scanned_at DESC LIMIT 20"
   ) as any[];
 
   let walletCount = 0;
+
   for (const token of riskyTokens as any[]) {
     try {
-      const res = await fetch(HELIUS_RPC, {
+      // Étape 1: récupérer les signatures pour ce token
+      const sigRes = await fetch(HELIUS_RPC, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getSignaturesForAddress", params: [token.token_address, { limit: 100 }] }),
+        body: JSON.stringify({
+          jsonrpc: "2.0", id: 1, method: "getSignaturesForAddress",
+          params: [token.token_address, { limit: 100 }]
+        }),
       });
-      const data = await res.json() as any;
-      const txns = data?.result || [];
-      const wallets = [...new Set(txns.map((t: any) => t.memo).filter(Boolean))].slice(0, 5) as string[];
+      const sigData = await sigRes.json() as any;
+      const sigs = sigData?.result || [];
+      if (sigs.length === 0) continue;
 
-      for (const wallet of wallets) {
-        const [known] = await db.query("SELECT id FROM bundle_wallets WHERE wallet_address=?", [wallet]) as any[];
-        if ((known as any[]).length > 0) continue;
+      // Étape 2: prendre la signature la plus ancienne (= création du token)
+      const oldestSig = sigs[sigs.length - 1]?.signature;
+      if (!oldestSig) continue;
 
-        const wRes = await fetch(HELIUS_RPC, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getSignaturesForAddress", params: [wallet, { limit: 50 }] }),
-        });
-        const wData = await wRes.json() as any;
-        const wTxns = wData?.result || [];
-        if (wTxns.length < 10) continue;
+      // Étape 3: fetch la transaction complète pour trouver le créateur
+      const txRes = await fetch(HELIUS_RPC, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0", id: 1, method: "getTransaction",
+          params: [oldestSig, { encoding: "json", maxSupportedTransactionVersion: 0 }]
+        }),
+      });
+      const txData = await txRes.json() as any;
+      // accountKeys[0] = fee payer = créateur du token
+      const accountKeys: string[] = txData?.result?.transaction?.message?.accountKeys || [];
+      const creatorWallet = accountKeys[0];
+      if (!creatorWallet) continue;
 
-        const winRate = (wTxns.filter((t: any) => !t.err).length / wTxns.length) * 100;
-        if (winRate > 50) {
-          await db.query(
-            "INSERT IGNORE INTO bundle_wallets (wallet_address, win_rate, total_transactions) VALUES (?, ?, ?)",
-            [wallet, winRate.toFixed(1), wTxns.length]
-          );
-          walletCount++;
-        }
-      }
+      // Étape 4: vérifier si déjà connu
+      const [known] = await db.query("SELECT id FROM bundle_wallets WHERE wallet_address=?", [creatorWallet]) as any[];
+      if ((known as any[]).length > 0) continue;
+
+      // Étape 5: analyser l'historique du wallet créateur
+      const wRes = await fetch(HELIUS_RPC, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0", id: 1, method: "getSignaturesForAddress",
+          params: [creatorWallet, { limit: 50 }]
+        }),
+      });
+      const wData = await wRes.json() as any;
+      const wTxns = wData?.result || [];
+      if (wTxns.length < 5) continue;
+
+      const successCount = wTxns.filter((t: any) => !t.err).length;
+      const winRate = (successCount / wTxns.length) * 100;
+
+      await db.query(
+        "INSERT IGNORE INTO bundle_wallets (wallet_address, win_rate, total_transactions) VALUES (?, ?, ?)",
+        [creatorWallet, winRate.toFixed(1), wTxns.length]
+      );
+      walletCount++;
+      console.log(`[Rugger] Wallet rugger détecté: ${creatorWallet.substring(0,12)}... (win: ${winRate.toFixed(1)}%)`);
     } catch (err) {
       console.error("[Rugger] Erreur:", err);
     }
     await new Promise(r => setTimeout(r, 500));
   }
+
   console.log(`[Rugger] ${walletCount} nouveaux wallets détectés`);
 }
