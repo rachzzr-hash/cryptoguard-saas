@@ -6,10 +6,18 @@ const HELIUS_RPC = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`;
 
 // ---- BOT INTEGRATION ----
 const BOT_API_URL = process.env.BOT_API_URL; // ex: https://solanatradingbot-production-xxx.up.railway.app
-const BOT_API_KEY = process.env.BOT_API_KEY;  // clé partagée avec CRYPTOGUARD_API_KEY du bot
+const BOT_API_KEY = process.env.BOT_API_KEY;  // clÃ© partagÃ©e avec CRYPTOGUARD_API_KEY du bot
 
-async function forwardTokenToBot(addr: string, name: string, score: number, liquidity: number): Promise<void> {
-  if (!BOT_API_URL) return; // pas de bot configuré
+async function forwardTokenToBot(
+  addr: string,
+  name: string,
+  score: number,
+  liquidity: number,
+  isRuggerSnipe: boolean = false,
+  creatorWallet?: string,
+  ruggerScore?: number
+): Promise<void> {
+  if (!BOT_API_URL) return;
   try {
     const res = await fetch(`${BOT_API_URL}/api/cryptoguard/enqueue-token`, {
       method: "POST",
@@ -17,10 +25,10 @@ async function forwardTokenToBot(addr: string, name: string, score: number, liqu
         "Content-Type": "application/json",
         ...(BOT_API_KEY ? { "x-api-key": BOT_API_KEY } : {}),
       },
-      body: JSON.stringify({ address: addr, symbol: name, name, score, liquidity }),
+      body: JSON.stringify({ address: addr, symbol: name, name, score, liquidity, isRuggerSnipe, creatorWallet, ruggerScore }),
     });
     if (res.ok) {
-      console.log(`[Scanner] ➡️  Token forwarded to bot: ${name} (${addr})`);
+      console.log(`[Scanner] â¡ï¸  Token forwarded to bot: ${name} (${addr})`);
     } else {
       console.warn(`[Scanner] Bot enqueue returned ${res.status} for ${name}`);
     }
@@ -148,6 +156,67 @@ async function getRugCheckScore(tokenAddress: string): Promise<{ score: number; 
   } catch { return null; }
 }
 
+// ---- RUGGER SNIPER: DÃ©tecte si le crÃ©ateur d'un token est un rugger connu ----
+async function checkCreatorIsKnownRugger(tokenAddress: string): Promise<{
+  isKnownRugger: boolean;
+  creatorWallet?: string;
+  winRate?: number;
+}> {
+  if (!HELIUS_API_KEY) return { isKnownRugger: false };
+  try {
+    const db = getPool();
+
+    // Ãtape 1: RÃ©cupÃ©rer les signatures pour ce token
+    const sigRes = await fetch(HELIUS_RPC, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: 1, method: "getSignaturesForAddress",
+        params: [tokenAddress, { limit: 10 }]
+      }),
+    });
+    const sigData = await sigRes.json() as any;
+    const sigs = sigData?.result || [];
+    if (sigs.length === 0) return { isKnownRugger: false };
+
+    // Ãtape 2: Transaction la plus ancienne = crÃ©ation du token
+    const oldestSig = sigs[sigs.length - 1]?.signature;
+    if (!oldestSig) return { isKnownRugger: false };
+
+    const txRes = await fetch(HELIUS_RPC, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: 1, method: "getTransaction",
+        params: [oldestSig, { encoding: "json", maxSupportedTransactionVersion: 0 }]
+      }),
+    });
+    const txData = await txRes.json() as any;
+    const accountKeys: string[] = txData?.result?.transaction?.message?.accountKeys || [];
+    const creatorWallet = accountKeys[0];
+    if (!creatorWallet) return { isKnownRugger: false };
+
+    // Ãtape 3: VÃ©rifier si ce wallet est dans bundle_wallets (ruggers connus)
+    const [known] = await db.query(
+      "SELECT wallet_address, win_rate FROM bundle_wallets WHERE wallet_address=?",
+      [creatorWallet]
+    ) as any[];
+
+    if ((known as any[]).length > 0) {
+      const rugger = (known as any[])[0];
+      return {
+        isKnownRugger: true,
+        creatorWallet,
+        winRate: rugger.win_rate,
+      };
+    }
+
+    return { isKnownRugger: false, creatorWallet };
+  } catch {
+    return { isKnownRugger: false };
+  }
+}
+
 // ---- PROCESS TOKEN ----
 async function processToken(addr: string, name: string, source: string, extraData: any = {}): Promise<"safe"|"risky"|"skip"> {
   const db = getPool();
@@ -180,8 +249,15 @@ async function processToken(addr: string, name: string, source: string, extraDat
     );
 
     if (isSafe) {
-      // Envoyer au bot de trading
+      // Token safe â envoyer au bot normalement
       await forwardTokenToBot(addr, name, score, liquidity);
+    } else {
+      // Token risquÃ© â vÃ©rifier si le crÃ©ateur est un rugger connu pour sniper
+      const ruggerInfo = await checkCreatorIsKnownRugger(addr);
+      if (ruggerInfo.isKnownRugger) {
+        console.log(`[Scanner] ð¯ RUGGER TOKEN DÃTECTÃ: ${name} | Creator: ${ruggerInfo.creatorWallet} | WinRate: ${ruggerInfo.winRate}%`);
+        await forwardTokenToBot(addr, name, score, liquidity, true, ruggerInfo.creatorWallet, ruggerInfo.winRate);
+      }
     }
 
     return isSafe ? "safe" : "risky";
@@ -209,12 +285,12 @@ export async function runScanner(): Promise<void> {
   let safe = 0, risky = 0, skipped = 0;
   for (const token of allTokens) {
     const result = await processToken(token.addr, token.name, token.source, token.extra);
-    if (result === "safe") { safe++; console.log(`[Scanner] ✅ SAFE: ${token.name} [${token.source}]`); }
+    if (result === "safe") { safe++; console.log(`[Scanner] â SAFE: ${token.name} [${token.source}]`); }
     else if (result === "risky") risky++;
     else skipped++;
     await new Promise(r => setTimeout(r, 300));
   }
-  console.log(`[Scanner] Resultat: ${safe} SAFE | ${risky} RISKY | ${skipped} ignorés (${allTokens.length} total)`);
+  console.log(`[Scanner] Resultat: ${safe} SAFE | ${risky} RISKY | ${skipped} ignorÃ©s (${allTokens.length} total)`);
 }
 
 // ---- RUGGER DETECTOR ----
@@ -224,7 +300,7 @@ export async function runRuggerDetector(): Promise<void> {
   const db = getPool();
 
   if (!HELIUS_API_KEY) {
-    console.warn("[Rugger] HELIUS_API_KEY non configuré - détection impossible");
+    console.warn("[Rugger] HELIUS_API_KEY non configurÃ© - dÃ©tection impossible");
     return;
   }
 
@@ -236,7 +312,7 @@ export async function runRuggerDetector(): Promise<void> {
 
   for (const token of riskyTokens as any[]) {
     try {
-      // Étape 1: récupérer les signatures pour ce token
+      // Ãtape 1: rÃ©cupÃ©rer les signatures pour ce token
       const sigRes = await fetch(HELIUS_RPC, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -249,11 +325,11 @@ export async function runRuggerDetector(): Promise<void> {
       const sigs = sigData?.result || [];
       if (sigs.length === 0) continue;
 
-      // Étape 2: prendre la signature la plus ancienne (= création du token)
+      // Ãtape 2: prendre la signature la plus ancienne (= crÃ©ation du token)
       const oldestSig = sigs[sigs.length - 1]?.signature;
       if (!oldestSig) continue;
 
-      // Étape 3: fetch la transaction complète pour trouver le créateur
+      // Ãtape 3: fetch la transaction complÃ¨te pour trouver le crÃ©ateur
       const txRes = await fetch(HELIUS_RPC, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -263,16 +339,16 @@ export async function runRuggerDetector(): Promise<void> {
         }),
       });
       const txData = await txRes.json() as any;
-      // accountKeys[0] = fee payer = créateur du token
+      // accountKeys[0] = fee payer = crÃ©ateur du token
       const accountKeys: string[] = txData?.result?.transaction?.message?.accountKeys || [];
       const creatorWallet = accountKeys[0];
       if (!creatorWallet) continue;
 
-      // Étape 4: vérifier si déjà connu
+      // Ãtape 4: vÃ©rifier si dÃ©jÃ  connu
       const [known] = await db.query("SELECT id FROM bundle_wallets WHERE wallet_address=?", [creatorWallet]) as any[];
       if ((known as any[]).length > 0) continue;
 
-      // Étape 5: analyser l'historique du wallet créateur
+      // Ãtape 5: analyser l'historique du wallet crÃ©ateur
       const wRes = await fetch(HELIUS_RPC, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -293,7 +369,7 @@ export async function runRuggerDetector(): Promise<void> {
         [creatorWallet, winRate.toFixed(1), wTxns.length]
       );
       walletCount++;
-      console.log(`[Rugger] Wallet rugger détecté: ${creatorWallet.substring(0,12)}... (win: ${winRate.toFixed(1)}%)`);
+      console.log(`[Rugger] Wallet rugger dÃ©tectÃ©: ${creatorWallet.substring(0,12)}... (win: ${winRate.toFixed(1)}%)`);
     } catch (err) {
       console.error("[Rugger] Erreur:", err);
     }
@@ -301,5 +377,5 @@ export async function runRuggerDetector(): Promise<void> {
       await new Promise(r => setTimeout(r, 500));
   }
 
-  console.log(`[Rugger] ${walletCount} nouveaux wallets détectés`);
+  console.log(`[Rugger] ${walletCount} nouveaux wallets dÃ©tectÃ©s`);
 }
